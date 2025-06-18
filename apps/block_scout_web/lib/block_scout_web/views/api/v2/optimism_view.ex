@@ -127,8 +127,8 @@ defmodule BlockScoutWeb.API.V2.OptimismView do
             "index" => g.index,
             "game_type" => g.game_type,
             # todo: It should be removed in favour `contract_address_hash` property with the next release after 8.0.0
-            "contract_address" => g.address,
-            "contract_address_hash" => g.address,
+            "contract_address" => g.address_hash,
+            "contract_address_hash" => g.address_hash,
             "l2_block_number" => l2_block_number,
             "created_at" => g.created_at,
             "status" => status,
@@ -251,6 +251,7 @@ defmodule BlockScoutWeb.API.V2.OptimismView do
         Enum.map(messages, fn message ->
           msg =
             %{
+              "unique_id" => InteropMessage.message_unique_id(message),
               "nonce" => message.nonce,
               "timestamp" => message.timestamp,
               "status" => message.status,
@@ -271,6 +272,30 @@ defmodule BlockScoutWeb.API.V2.OptimismView do
           |> maybe_add_chain(:relay_chain, message)
         end),
       next_page_params: next_page_params
+    }
+  end
+
+  @doc """
+    Function to render GET requests to `/api/v2/optimism/interop/messages/:unique_id` endpoint.
+  """
+  def render("optimism_interop_message.json", %{message: message}) do
+    %{
+      "init_chain" => message.init_chain,
+      "init_transaction_hash" => message.init_transaction_hash,
+      "timestamp" => message.timestamp,
+      "sender_address_hash" => message.sender_address_hash,
+      "relay_chain" => message.relay_chain,
+      "relay_transaction_hash" => message.relay_transaction_hash,
+      "relay_transaction_failed" => message.failed,
+      "target_address_hash" => message.target_address_hash,
+      "transfer_token" => message.transfer_token,
+      "transfer_amount" => message.transfer_amount,
+      "transfer_from_address_hash" => message.transfer_from_address_hash,
+      "transfer_to_address_hash" => message.transfer_to_address_hash,
+      "nonce" => message.nonce,
+      "direction" => message.direction,
+      "status" => message.status,
+      "payload" => ExplorerHelper.add_0x_prefix(message.payload)
     }
   end
 
@@ -446,16 +471,19 @@ defmodule BlockScoutWeb.API.V2.OptimismView do
         }
       end)
 
-    interop_message =
+    interop_messages =
       transaction_hash
-      |> InteropMessage.message_by_transaction()
+      |> InteropMessage.messages_by_transaction()
 
     out_json = Map.put(out_json, "op_withdrawals", withdrawals)
 
-    if is_nil(interop_message) do
+    if interop_messages == [] do
       out_json
     else
-      Map.put(out_json, "op_interop", interop_message)
+      out_json
+      |> Map.put("op_interop_messages", interop_messages)
+      # TODO: remove the deprecated `op_interop` map after frontend switches to the new `op_interop_messages`
+      |> Map.put("op_interop", Enum.at(interop_messages, 0))
     end
   end
 
