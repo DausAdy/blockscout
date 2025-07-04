@@ -89,7 +89,12 @@ defmodule Explorer.Application do
       con_cache_child_spec(RSK.cache_name(), ttl_check_interval: :timer.minutes(1), global_ttl: :timer.minutes(30)),
       {Redix, redix_opts()},
       {Explorer.Utility.MissingRangesManipulator, []},
-      {Explorer.Utility.ReplicaAccessibilityManager, []}
+      {Explorer.Utility.ReplicaAccessibilityManager, []},
+      :hackney_pool.child_spec(:default,
+        recv_timeout: 60_000,
+        timeout: 60_000,
+        max_connections: Application.get_env(:explorer, :hackney_default_pool_size)
+      )
     ]
 
     children = base_children ++ configurable_children()
@@ -142,18 +147,21 @@ defmodule Explorer.Application do
         configure_sc_microservice(Explorer.Chain.Fetcher.LookUpSmartContractSourcesOnDemand),
         configure(Explorer.Chain.Cache.Counters.Rootstock.LockedBTCCount),
         configure(Explorer.Chain.Cache.OptimismFinalizationPeriod),
-        configure(Explorer.Migrator.TransactionsDenormalization),
-        configure(Explorer.Migrator.AddressCurrentTokenBalanceTokenType),
-        configure(Explorer.Migrator.AddressTokenBalanceTokenType),
-        configure(Explorer.Migrator.SanitizeMissingBlockRanges),
-        configure(Explorer.Migrator.SanitizeIncorrectNFTTokenTransfers),
-        configure(Explorer.Migrator.TokenTransferTokenType),
-        configure(Explorer.Migrator.SanitizeIncorrectWETHTokenTransfers),
-        configure(Explorer.Migrator.TransactionBlockConsensus),
-        configure(Explorer.Migrator.TokenTransferBlockConsensus),
-        configure(Explorer.Migrator.RestoreOmittedWETHTransfers),
-        configure(Explorer.Migrator.FilecoinPendingAddressOperations),
-        configure(Explorer.Migrator.SmartContractLanguage),
+        configure(Explorer.Chain.Cache.CeloEpochs),
+        configure_mode_dependent_process(Explorer.Migrator.TransactionsDenormalization, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.AddressCurrentTokenBalanceTokenType, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.AddressTokenBalanceTokenType, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.SanitizeMissingBlockRanges, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.SanitizeIncorrectNFTTokenTransfers, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.TokenTransferTokenType, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.SanitizeIncorrectWETHTokenTransfers, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.TransactionBlockConsensus, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.TokenTransferBlockConsensus, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.RestoreOmittedWETHTransfers, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.FilecoinPendingAddressOperations, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.SmartContractLanguage, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.CeloL2Epochs, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.SanitizeErc1155TokenBalancesWithoutTokenIds, :indexer),
         Explorer.Migrator.BackfillMultichainSearchDB
         |> configure_mode_dependent_process(:indexer)
         |> configure_multichain_search_microservice(),
@@ -181,6 +189,8 @@ defmodule Explorer.Application do
         configure_mode_dependent_process(Explorer.Migrator.SanitizeVerifiedAddresses, :indexer),
         configure_mode_dependent_process(Explorer.Migrator.SanitizeEmptyContractCodeAddresses, :indexer),
         configure_mode_dependent_process(Explorer.Migrator.ReindexInternalTransactionsWithIncompatibleStatus, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.ReindexDuplicatedInternalTransactions, :indexer),
+        configure_mode_dependent_process(Explorer.Migrator.ReindexBlocksWithMissingTransactions, :indexer),
         configure_mode_dependent_process(
           Explorer.Migrator.HeavyDbIndexOperation.CreateAddressesVerifiedIndex,
           :indexer
@@ -285,6 +295,10 @@ defmodule Explorer.Application do
         ),
         configure_mode_dependent_process(
           Explorer.Migrator.HeavyDbIndexOperation.CreateAddressesTransactionsCountAscCoinBalanceDescHashPartialIndex,
+          :indexer
+        ),
+        configure_mode_dependent_process(
+          Explorer.Migrator.HeavyDbIndexOperation.CreateInternalTransactionsBlockHashTransactionIndexIndexUniqueIndex,
           :indexer
         ),
         Explorer.Migrator.RefetchContractCodes |> configure() |> configure_chain_type_dependent_process(:zksync),

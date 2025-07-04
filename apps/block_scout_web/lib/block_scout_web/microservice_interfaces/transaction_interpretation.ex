@@ -10,7 +10,9 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
   alias Explorer.Chain.{Data, InternalTransaction, Log, TokenTransfer, Transaction}
   alias HTTPoison.Response
 
-  import Explorer.Chain.SmartContract.Proxy.Models.Implementation, only: [proxy_implementations_association: 0]
+  import Explorer.Chain.SmartContract.Proxy.Models.Implementation,
+    only: [proxy_implementations_association: 0, proxy_implementations_smart_contracts_association: 0]
+
   import Explorer.MicroserviceInterfaces.Metadata, only: [maybe_preload_metadata: 1]
   import Explorer.Utility.Microservice, only: [base_url: 2, check_enabled: 2]
   require Logger
@@ -233,7 +235,7 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
     full_options =
       [
         necessity_by_association: %{
-          [address: [:names, :smart_contract, proxy_implementations_association()]] => :optional
+          [address: [:names, :smart_contract, proxy_implementations_smart_contracts_association()]] => :optional
         }
       ]
       |> Keyword.merge(@api_true)
@@ -255,7 +257,7 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
     log_options =
       [
         necessity_by_association: %{
-          [address: [:names, :smart_contract, proxy_implementations_association()]] => :optional
+          [address: [:names, :smart_contract, proxy_implementations_smart_contracts_association()]] => :optional
         },
         limit: @items_limit
       ]
@@ -308,7 +310,14 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
 
   defp preload_template_variables(error), do: error
 
+  # TODO: remove this once we have updated the transaction interpretation service
   defp preload_template_variable(%{"type" => "token", "value" => %{"address" => address_hash_string} = value}),
+    do: %{
+      "type" => "token",
+      "value" => address_hash_string |> Chain.token_from_address_hash(@api_true) |> token_from_db() |> Map.merge(value)
+    }
+
+  defp preload_template_variable(%{"type" => "token", "value" => %{"address_hash" => address_hash_string} = value}),
     do: %{
       "type" => "token",
       "value" => address_hash_string |> Chain.token_from_address_hash(@api_true) |> token_from_db() |> Map.merge(value)
@@ -394,7 +403,7 @@ defmodule BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation do
   def decode_user_op_calldata(user_op_hash, call_data) do
     {:ok, input} = Data.cast(call_data)
 
-    {:ok, op_hash} = Chain.string_to_transaction_hash(user_op_hash)
+    {:ok, op_hash} = Chain.string_to_full_hash(user_op_hash)
 
     mock_transaction = %Transaction{
       to_address: %NotLoaded{},
